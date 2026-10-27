@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monster Punch: Brain Brawl - Imbuhan Apitan</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome & Google Fonts -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Short+Stack&display=swap" rel="stylesheet">
+
+    <!-- MediaPipe Hands & Camera Utils CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            font-family: 'Short Stack', cursive, sans-serif;
+            background: linear-gradient(135deg, #1e1b4b, #311042, #0f172a);
+            color: #fff;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        .title-font {
+            font-family: 'Fredoka One', cursive;
+        }
+
+        /* Mirror Video Feed */
+        #webcam {
+            transform: scaleX(-1);
+        }
+
+        /* Monster Bounce Animation */
+        @keyframes monsterFloat {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-12px) rotate(2deg); }
+        }
+
+        .monster-card {
+            animation: monsterFloat 3s infinite ease-in-out;
+            transition: all 0.2s ease;
+        }
+
+        .monster-card:hover {
+            transform: scale(1.05);
+        }
+
+        /* Punch Impact Effect */
+        .hit-effect {
+            animation: hitShake 0.3s ease-in-out;
+        }
+
+        @keyframes hitShake {
+            0% { transform: translate(0, 0) scale(1); }
+            20% { transform: translate(-10px, 10px) scale(1.1); }
+            40% { transform: translate(10px, -10px) scale(0.95); }
+            60% { transform: translate(-5px, -5px) scale(1.05); }
+            100% { transform: translate(0, 0) scale(1); }
+        }
+
+        /* Custom Glowing Elements */
+        .glow-box {
+            box-shadow: 0 0 25px rgba(236, 72, 153, 0.5), inset 0 0 15px rgba(255, 255, 255, 0.2);
+        }
+
+        .glow-text {
+            text-shadow: 0 0 10px rgba(244, 63, 94, 0.8), 0 0 20px rgba(236, 72, 153, 0.6);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col justify-between items-center relative select-none">
+
+    <!-- Top HUD Bar -->
+    <header class="w-full max-w-6xl px-4 pt-4 z-20 flex justify-between items-center">
+        <!-- Skor -->
+        <div class="bg-slate-900/80 backdrop-blur border-2 border-yellow-400 px-5 py-2 rounded-2xl flex items-center gap-3 shadow-lg">
+            <i class="fa-solid fa-trophy text-yellow-400 text-2xl"></i>
+            <div>
+                <div class="text-xs text-yellow-300 font-bold uppercase tracking-wider">Skor</div>
+                <div id="score-text" class="text-2xl title-font text-white">0</div>
+            </div>
+        </div>
+
+        <!-- Masa / Timer -->
+        <div class="bg-slate-900/80 backdrop-blur border-2 border-cyan-400 px-6 py-2 rounded-2xl flex items-center gap-3 shadow-lg">
+            <i class="fa-solid fa-stopwatch text-cyan-400 text-2xl"></i>
+            <div>
+                <div class="text-xs text-cyan-300 font-bold uppercase tracking-wider">Masa</div>
+                <div id="timer-text" class="text-2xl title-font text-cyan-200">15s</div>
+            </div>
+        </div>
+
+        <!-- Nyawa / Lives -->
+        <div class="bg-slate-900/80 backdrop-blur border-2 border-rose-500 px-5 py-2 rounded-2xl flex items-center gap-2 shadow-lg">
+            <div id="lives-container" class="flex gap-1 text-2xl text-rose-500">
+                <i class="fa-solid fa-heart"></i>
+                <i class="fa-solid fa-heart"></i>
+                <i class="fa-solid fa-heart"></i>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Game Play Area -->
+    <main class="relative w-full max-w-6xl flex-1 my-2 flex flex-col items-center justify-between px-4 z-10">
+        
+        <!-- Soalan Display Card -->
+        <div id="question-card" class="w-full bg-slate-900/90 border-4 border-purple-500/80 rounded-3xl p-4 md:p-6 text-center shadow-2xl backdrop-blur-md relative overflow-hidden transition-all duration-300">
+            <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-purple-600 text-xs font-bold px-4 py-1 rounded-full uppercase tracking-widest text-white shadow">
+                Soalan <span id="current-q-num">1</span> / 10
+            </div>
+            <p class="text-xs md:text-sm text-purple-300 mb-1 font-bold">Pendidikan Islam Tahun 3: Imbuhan Apitan</p>
+            <h2 id="question-text" class="text-xl md:text-2xl lg:text-3xl font-bold text-yellow-300 tracking-wide mt-1">
+                -- Loading Question --
+            </h2>
+        </div>
+
+        <!-- Monsters / Answer Targets Grid -->
+        <div id="monsters-container" class="w-full grid grid-cols-3 gap-3 md:gap-6 my-auto">
+            <!-- Monster Cards will be dynamically updated -->
+        </div>
+
+        <!-- Gesture Status Indicator -->
+        <div class="bg-black/60 backdrop-blur px-4 py-1.5 rounded-full border border-white/20 text-xs text-gray-200 flex items-center gap-2">
+            <span id="gesture-dot" class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
+            <span id="gesture-text">Sila tunjukkan tangan di hadapan kamera...</span>
+        </div>
+    </main>
+
+    <!-- Canvas Layer for Mirror Video, Hand Landmarks, and Punch Slashes -->
+    <div class="fixed inset-0 z-0 pointer-events-none flex items-center justify-center">
+        <!-- Hidden video source -->
+        <video id="webcam" class="hidden" playsinline></video>
+        <!-- Interactive Canvas overlay -->
+        <canvas id="game-canvas" class="w-full h-full object-cover opacity-30 md:opacity-40"></canvas>
+    </div>
+
+    <!-- START SCREEN OVERLAY -->
+    <div id="start-screen" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-lg flex flex-col items-center justify-center p-6 text-center">
+        <div class="max-w-xl w-full bg-slate-900 border-4 border-pink-500 rounded-3xl p-8 shadow-2xl glow-box flex flex-col items-center">
+            <div class="text-6xl mb-2">👾👊</div>
+            <h1 class="text-4xl md:text-5xl title-font text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-pink-500 to-cyan-400 mb-2 glow-text">
+                MONSTER PUNCH
+            </h1>
+            <p class="text-lg text-pink-300 font-bold mb-4">BRAIN BRAWL : IMBUHAN APITAN</p>
+            
+            <div class="bg-slate-800/80 rounded-2xl p-4 text-left text-sm text-gray-300 space-y-2 mb-6 border border-slate-700">
+                <p class="font-bold text-yellow-400 text-base mb-1">Cara Bermain:</p>
+                <p>1. Benarkan akses kamera (webcam) anda.</p>
+                <p>2. Baca soalan tentang <b>Imbuhan Apitan</b> di atas layar.</p>
+                <p>3. Arahkan tangan ke monster yang membawa jawapan betul.</p>
+                <p>4. <b>KEPALKAN TANGAN (TUMBUK) ✊</b> untuk memukul monster tersebut!</p>
+            </div>
+
+            <button id="start-btn" class="w-full py-4 bg-gradient-to-r from-pink-500 via-purple-600 to-indigo-600 hover:from-pink-600 hover:to-indigo-700 text-white font-bold text-xl rounded-2xl shadow-lg transform active:scale-95 transition flex items-center justify-center gap-3 border-2 border-white/20">
+                <i class="fa-solid fa-play"></i> MULA PERMAINAN
+            </button>
+        </div>
+    </div>
+
+    <!-- GAME OVER / RESULTS OVERLAY -->
+    <div id="game-over-screen" class="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center hidden">
+        <div class="max-w-md w-full bg-slate-900 border-4 border-yellow-400 rounded-3xl p-8 shadow-2xl flex flex-col items-center">
+            <div id="result-icon" class="text-6xl mb-3">🏆</div>
+            <h2 id="result-title" class="text-3xl title-font text-yellow-400 mb-2">TAHNIAH!</h2>
+            <p id="result-desc" class="text-gray-300 mb-6">Anda telah berjaya menewaskan semua monster!</p>
+            
+            <div class="bg-slate-800 rounded-2xl p-4 w-full mb-6 border border-slate-700 flex justify-around">
+                <div>
+                    <div class="text-xs text-gray-400 uppercase">Skor Akhir</div>
+                    <div id="final-score" class="text-3xl title-font text-yellow-400">0</div>
+                </div>
+                <div class="border-r border-slate-700"></div>
+                <div>
+                    <div class="text-xs text-gray-400 uppercase">Ketepatan</div>
+                    <div id="final-accuracy" class="text-3xl title-font text-cyan-400">0%</div>
+                </div>
+            </div>
+
+            <button id="restart-btn" class="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-lg rounded-2xl shadow-lg transform active:scale-95 transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-rotate-right"></i> MAIN SEMULA
+            </button>
+        </div>
+    </div>
+
+    <script>
+        /* ===================================================================
+           QUESTION BANK (Pendidikan Islam Tahun 3 - Imbuhan Apitan)
+           =================================================================== */
+        const questionsData = [
+            {
+                q: "Pilih perkataan berimbuhan apitan 'pe...an' yang betul bagi kata dasar 'lahir':",
+                answers: ["Pelahiran", "Kelahiran", "Perlahiran"],
+                correct: 0
+            },
+            {
+                q: "Manakah imbuhan apitan yang betul untuk kata dasar 'ajar' (pembelajaran)?",
+                answers: ["pem...an", "pem...kan", "peng...an"],
+                correct: 0
+            },
+            {
+                q: "Perkataan 'bersalaman' mempunyai imbuhan apitan...",
+                answers: ["ber...an", "me...kan", "di...kan"],
+                correct: 0
+            },
+            {
+                q: "Lengkapkan ayat: 'Ahmad mendapat ___________ atas kejayaannya.' (penghargaan)",
+                answers: ["peng...an", "peng...kan", "pe...an"],
+                correct: 0
+            },
+            {
+                q: "Manakah perkataan yang mengandungi imbuhan apitan 'mem...kan'?",
+                answers: ["Memperkemas", "Membersihkan", "Membeli"],
+                correct: 1
+            },
+            {
+                q: "Kata dasar bagi 'pakaian' ialah 'pakai'. Apakah imbuhan apitan bagi 'berpakaian'?",
+                answers: ["ber...an", "pe...an", "se...an"],
+                correct: 0
+            },
+            {
+                q: "Antara berikut, yang manakah BUKAN kata berimbuhan apitan?",
+                answers: ["Pemasangan", "Perjalanan", "Makanan"],
+                correct: 2
+            },
+            {
+                q: "Lengkapkan kata terbitan ini: 'di...i' + 'hormat' =",
+                answers: ["Dihormati", "Dihormatkan", "Menghormati"],
+                correct: 0
+            },
+            {
+                q: "Apakah imbuhan apitan yang sesuai untuk 'ke...an' pada kata dasar 'bersih'?",
+                answers: ["Kebersihan", "Pembersihan", "Membersihkan"],
+                correct: 0
+            },
+            {
+                q: "Pilih ayat yang menggunakan kata berimbuhan apitan 'men...kan' dengan betul:",
+                answers: ["Kami menjalankan solat berjemaah.", "Ali makan nasi goreng.", "Siti membaca buku agama."],
+                correct: 0
+            }
+        ];
+
+        // Monster Assets Visual Configs
+        const monsterTypes = [
+            { bg: "from-rose-500 to-red-700", border: "border-rose-300", icon: "👾", name: "Blaze" },
+            { bg: "from-purple-600 to-indigo-800", border: "border-purple-300", icon: "👹", name: "Gloom" },
+            { bg: "from-emerald-500 to-teal-700", border: "border-emerald-300", icon: "👺", name: "Venom" },
+            { bg: "from-amber-500 to-orange-700", border: "border-amber-300", icon: "👻", name: "Spark" },
+            { bg: "from-cyan-500 to-blue-700", border: "border-cyan-300", icon: "🤖", name: "Frost" }
+        ];
+
+        /* ===================================================================
+           SOUND EFFECTS SYNTHESIZER (Web Audio API - No external audio)
+           =================================================================== */
+        class SoundFX {
+            constructor() {
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+
+            playPunch() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(120, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.15);
+                
+                gain.gain.setValueAtTime(1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            }
+
+            playCorrect() {
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(523.25, now); // C5
+                osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
+                osc.frequency.setValueAtTime(783.99, now + 0.16); // G5
+                
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(now + 0.3);
+            }
+
+            playWrong() {
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(180, now);
+                osc.frequency.setValueAtTime(110, now + 0.1);
+                
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(now + 0.25);
+            }
+        }
+
+        const soundFx = new SoundFX();
+
+        /* ===================================================================
+           GAME STATE VARIABLES
+           =================================================================== */
+        let currentQuestionIdx = 0;
+        let score = 0;
+        let lives = 3;
+        let timeLeft = 15;
+        let timerInterval = null;
+        let gameActive = false;
+        let correctPunches = 0;
+        let totalPunches = 0;
+
+        // Hand Tracking & Punch Detection logic
+        let fistDetected = false;
+        let lastPunchTime = 0;
+        let punchCooldown = 700; // ms between punches
+        let punchEffects = []; // Visual slashes on canvas
+
+        /* ===================================================================
+           DOM ELEMENTS
+           =================================================================== */
+        const scoreText = document.getElementById('score-text');
+        const timerText = document.getElementById('timer-text');
+        const livesContainer = document.getElementById('lives-container');
+        const questionText = document.getElementById('question-text');
+        const currentQNum = document.getElementById('current-q-num');
+        const monstersContainer = document.getElementById('monsters-container');
+        const gestureDot = document.getElementById('gesture-dot');
+        const gestureText = document.getElementById('gesture-text');
+        
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const startBtn = document.getElementById('start-btn');
+        const restartBtn = document.getElementById('restart-btn');
+
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const videoElement = document.getElementById('webcam');
+
+        /* ===================================================================
+           CANVAS & RESIZE HANDLING
+           =================================================================== */
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        /* ===================================================================
+           GAME LOGIC & FLOW
+           =================================================================== */
+        startBtn.addEventListener('click', () => {
+            soundFx.init();
+            startScreen.classList.add('hidden');
+            startGame();
+        });
+
+        restartBtn.addEventListener('click', () => {
+            gameOverScreen.classList.add('hidden');
+            startGame();
+        });
+
+        function startGame() {
+            currentQuestionIdx = 0;
+            score = 0;
+            lives = 3;
+            correctPunches = 0;
+            totalPunches = 0;
+            gameActive = true;
+            
+            updateScoreUI();
+            updateLivesUI();
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            if (currentQuestionIdx >= questionsData.length) {
+                endGame(true);
+                return;
+            }
+
+            const q = questionsData[currentQuestionIdx];
+            currentQNum.innerText = currentQuestionIdx + 1;
+            questionText.innerText = q.q;
+
+            // Render Monster Option Cards
+            monstersContainer.innerHTML = '';
+            
+            // Randomize monster styling assignment
+            const shuffledMonsters = [...monsterTypes].sort(() => 0.5 - Math.random());
+
+            q.answers.forEach((ans, idx) => {
+                const style = shuffledMonsters[idx % shuffledMonsters.length];
+                const card = document.createElement('div');
+                card.dataset.index = idx;
+                card.className = `monster-card relative bg-gradient-to-b ${style.bg} border-4 ${style.border} rounded-3xl p-4 flex flex-col items-center justify-between text-center shadow-xl cursor-pointer select-none overflow-hidden`;
+                
+                card.innerHTML = `
+                    <div class="text-5xl md:text-6xl mb-2 filter drop-shadow-md transform transition duration-200">${style.icon}</div>
+                    <div class="w-full bg-slate-900/80 backdrop-blur rounded-xl py-2 px-3 border border-white/20">
+                        <span class="text-sm md:text-lg font-bold text-white block break-words">${ans}</span>
+                    </div>
+                    <div class="mt-2 text-xs font-bold text-white/70 uppercase tracking-widest">${style.name}</div>
+                `;
+
+                // Add direct tap/click support as fallback
+                card.addEventListener('click', () => {
+                    if (!gameActive) return;
+                    handlePunch(idx, card);
+                });
+
+                monstersContainer.appendChild(card);
+            });
+
+            resetTimer();
+        }
+
+        function resetTimer() {
+            clearInterval(timerInterval);
+            timeLeft = 15;
+            timerText.innerText = `${timeLeft}s`;
+            timerText.classList.remove('text-red-400', 'animate-ping');
+
+            timerInterval = setInterval(() => {
+                if (!gameActive) return;
+                timeLeft--;
+                timerText.innerText = `${timeLeft}s`;
+
+                if (timeLeft <= 5) {
+                    timerText.classList.add('text-red-400');
+                }
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    soundFx.playWrong();
+                    deductLife();
+                    nextQuestion();
+                }
+            }, 1000);
+        }
+
+        function handlePunch(answerIdx, targetCard) {
+            const now = Date.now();
+            if (now - lastPunchTime < punchCooldown) return;
+            lastPunchTime = now;
+
+            totalPunches++;
+            const currentQ = questionsData[currentQuestionIdx];
+
+            // Add hit animation to card
+            if (targetCard) {
+                targetCard.classList.add('hit-effect');
+                setTimeout(() => targetCard.classList.remove('hit-effect'), 300);
+            }
+
+            if (answerIdx === currentQ.correct) {
+                // Correct Answer!
+                soundFx.playCorrect();
+                soundFx.playPunch();
+                score += 100 + (timeLeft * 10);
+                correctPunches++;
+                updateScoreUI();
+
+                // Show Slash particles on screen
+                if (targetCard) {
+                    const rect = targetCard.getBoundingClientRect();
+                    createSlashEffect(rect.left + rect.width / 2, rect.top + rect.height / 2);
+                }
+
+                nextQuestion();
+            } else {
+                // Wrong Answer!
+                soundFx.playWrong();
+                soundFx.playPunch();
+                deductLife();
+                nextQuestion();
+            }
+        }
+
+        function deductLife() {
+            lives--;
+            updateLivesUI();
+            if (lives <= 0) {
+                endGame(false);
+            }
+        }
+
+        function nextQuestion() {
+            currentQuestionIdx++;
+            setTimeout(() => {
+                if (lives > 0 && gameActive) {
+                    loadQuestion();
+                }
+            }, 500);
+        }
+
+        function updateScoreUI() {
+            scoreText.innerText = score;
+        }
+
+        function updateLivesUI() {
+            livesContainer.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                const heart = document.createElement('i');
+                if (i < lives) {
+                    heart.className = 'fa-solid fa-heart text-rose-500 animate-pulse';
+                } else {
+                    heart.className = 'fa-regular fa-heart text-gray-600';
+                }
+                livesContainer.appendChild(heart);
+            }
+        }
+
+        function endGame(isWin) {
+            gameActive = false;
+            clearInterval(timerInterval);
+
+            const resultTitle = document.getElementById('result-title');
+            const resultDesc = document.getElementById('result-desc');
+            const resultIcon = document.getElementById('result-icon');
+            const finalScore = document.getElementById('final-score');
+            const finalAccuracy = document.getElementById('final-accuracy');
+
+            const accuracy = totalPunches > 0 ? Math.round((correctPunches / totalPunches) * 100) : 0;
+
+            finalScore.innerText = score;
+            finalAccuracy.innerText = `${accuracy}%`;
+
+            if (isWin && lives > 0) {
+                resultIcon.innerText = '🏆';
+                resultTitle.innerText = 'TAHNIAH! JUARA!';
+                resultTitle.className = 'text-3xl title-font text-yellow-400 mb-2';
+                resultDesc.innerText = 'Anda berjaya menguasai Imbuhan Apitan dengan cemerlang!';
+            } else {
+                resultIcon.innerText = '💀';
+                resultTitle.innerText = 'PERMAINAN TAMAT';
+                resultTitle.className = 'text-3xl title-font text-rose-500 mb-2';
+                resultDesc.innerText = 'Jangan putus asa! Cuba lagi untuk mengalahkan monster!';
+            }
+
+            gameOverScreen.classList.remove('hidden');
+        }
+
+        /* ===================================================================
+           CANVAS SLASH EFFECTS ANIMATION
+           =================================================================== */
+        function createSlashEffect(x, y) {
+            punchEffects.push({
+                x: x,
+                y: y,
+                radius: 10,
+                maxRadius: 80,
+                alpha: 1,
+                color: '#f43f5e'
+            });
+        }
+
+        function renderCanvasEffects() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw punch slash animations
+            for (let i = punchEffects.length - 1; i >= 0; i--) {
+                const fx = punchEffects[i];
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2);
+                ctx.strokeStyle = fx.color;
+                ctx.lineWidth = 8;
+                ctx.globalAlpha = fx.alpha;
+                ctx.shadowColor = fx.color;
+                ctx.shadowBlur = 15;
+                ctx.stroke();
+                ctx.restore();
+
+                fx.radius += 6;
+                fx.alpha -= 0.05;
+
+                if (fx.alpha <= 0) {
+                    punchEffects.splice(i, 1);
+                }
+            }
+
+            requestAnimationFrame(renderCanvasEffects);
+        }
+        renderCanvasEffects();
+
+        /* ===================================================================
+           MEDIAPIPE HANDS GESTURE RECOGNITION
+           =================================================================== */
+        // Check if hand is making a FIST (tumbuk) gesture
+        function isFistGesture(landmarks) {
+            // Landmarks for finger tips: Index(8), Middle(12), Ring(16), Pinky(20)
+            // Landmarks for finger MCPs (knuckles): Index(5), Middle(9), Ring(13), Pinky(17)
+            const tipIndices = [8, 12, 16, 20];
+            const mcpIndices = [5, 9, 13, 17];
+
+            let foldedFingers = 0;
+            for (let i = 0; i < 4; i++) {
+                const tip = landmarks[tipIndices[i]];
+                const mcp = landmarks[mcpIndices[i]];
+                
+                // Finger is folded if tip Y coordinate is lower (greater) than MCP knuckle coordinate
+                if (tip.y > mcp.y) {
+                    foldedFingers++;
+                }
+            }
+
+            // If at least 3 out of 4 fingers are folded, classify as Fist/Punch!
+            return foldedFingers >= 3;
+        }
+
+        function onHandResults(results) {
+            if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+                gestureDot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
+                gestureText.innerText = 'Sila tunjukkan tangan di hadapan kamera...';
+                fistDetected = false;
+                return;
+            }
+
+            const landmarks = results.multiHandLandmarks[0];
+            
+            // Get Wrist/Hand Position mapped to Screen Coordinates
+            // Mirror X coordinate because webcam is mirrored
+            const wristX = (1 - landmarks[0].x) * window.innerWidth;
+            const wristY = landmarks[0].y * window.innerHeight;
+
+            // Draw target tracking circle on hand position
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(wristX, wristY, 20, 0, Math.PI * 2);
+            ctx.fillStyle = fistDetected ? '#ef4444' : '#3b82f6';
+            ctx.globalAlpha = 0.6;
+            ctx.fill();
+            ctx.restore();
+
+            // Detect Fist Gesture
+            const isFist = isFistGesture(landmarks);
+
+            if (isFist) {
+                gestureDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping';
+                gestureText.innerText = 'TUMBUKAN DIKESAN! ✊';
+
+                if (!fistDetected && gameActive) {
+                    fistDetected = true;
+                    checkHandInteraction(wristX, wristY);
+                }
+            } else {
+                gestureDot.className = 'w-2.5 h-2.5 rounded-full bg-cyan-400';
+                gestureText.innerText = 'Tangan Dikesan ✋ (Kepalkan tangan untuk memukul)';
+                fistDetected = false;
+            }
+        }
+
+        // Detect collision between hand punch location and Monster cards
+        function checkHandInteraction(x, y) {
+            const cards = document.querySelectorAll('.monster-card');
+            cards.forEach(card => {
+                const rect = card.getBoundingClientRect();
+                if (
+                    x >= rect.left &&
+                    x <= rect.right &&
+                    y >= rect.top &&
+                    y <= rect.bottom
+                ) {
+                    const idx = parseInt(card.dataset.index);
+                    handlePunch(idx, card);
+                }
+            });
+        }
+
+        /* ===================================================================
+           INITIALIZE MEDIAPIPE HANDS & CAMERA
+           =================================================================== */
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+
+        hands.onResults(onHandResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start().catch(err => {
+            console.error("Camera access error:", err);
+            gestureText.innerText = "Gagal mengakses kamera. Anda masih boleh ketik/klik jawapan!";
+        });
+
+    </script>
+</body>
+</html>
